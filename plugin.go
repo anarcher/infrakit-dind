@@ -4,20 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/network"
-	docker_client "github.com/docker/docker/client"
 	"github.com/docker/infrakit/pkg/spi/instance"
 )
 
 const (
-	DefaultImage      = "docker:1.12.3-dind"
-	DefaultSpecOption = "-d --privileged "
+	DefaultImage = "docker:1.12.3-dind"
 )
+
+func init() {
+	rand.Seed(time.Now().UTC().UnixNano())
+}
 
 // Spec is a docker container run options.
 type ContainerSpec struct {
@@ -29,16 +29,15 @@ type ContainerSpec struct {
 }
 
 type plugin struct {
-	cli          *docker_client.Client
-	err          error
-	containerIDs []string
+	client *DockerClient
+	err    error
 }
 
 func NewDInDInstancePlugin() instance.Plugin {
 	log.Debugln("dind instance plugin.")
 
 	p := &plugin{}
-	p.cli, p.err = docker_client.NewEnvClient()
+	p.client, p.err = NewEnvDockerClient()
 
 	return p
 }
@@ -48,11 +47,13 @@ func (p *plugin) Validate(req json.RawMessage) error {
 	log.Debugln("validate", string(req))
 
 	if p.err != nil {
+		log.Error(p.err)
 		return p.err
 	}
 
 	spec := ContainerSpec{}
 	if err := json.Unmarshal(req, &spec); err != nil {
+		log.Error(err)
 		return err
 	}
 
@@ -61,41 +62,50 @@ func (p *plugin) Validate(req json.RawMessage) error {
 
 // Provision creates a new instance based on the spec
 func (p *plugin) Provision(spec instance.Spec) (*instance.ID, error) {
+	log.Debugln("provision")
 	if spec.Properties == nil {
 		return nil, fmt.Errorf("no-properties")
 	}
 
-	containerSpec := &ContainerSpec{
+	cSpec := &ContainerSpec{
 		Image: DefaultImage,
 	}
-	if err := json.Unmarshal(*spec.Properties, &containerSpec); err != nil {
+	if err := json.Unmarshal(*spec.Properties, &cSpec); err != nil {
+		log.Error(err)
 		return nil, err
 	}
 
 	ctx := context.Background()
 
-	cfg := &container.Config{
-		Hostname: containerSpec.Hostname,
-		Image:    containerSpec.Image,
+	image := cSpec.Image
+	labels := spec.Tags
+
+	idx := rand.Int31()
+	name := string(*spec.LogicalID)
+	hostname := string(*spec.LogicalID)
+	if name == "" {
+		name = fmt.Sprintf("%s-%d", cSpec.Name, idx)
 	}
-	hostCfg := &container.HostConfig{
-		Privileged: true,
+	if hostname == "" {
+		hostname = fmt.Sprintf("%s-%d", cSpec.Hostname, idx)
 	}
-	netCfg := &network.NetworkingConfig{}
-	resp, err := p.cli.ContainerCreate(ctx, cfg, hostCfg, netCfg, containerSpec.Name)
+
+	log.Debugln("container", name, hostname, image, labels)
+
+	containerID, err := p.client.ContainerRun(ctx, name, hostname, image, labels)
 	if err != nil {
+		log.Error(err)
 		return nil, err
 	}
-	if err := p.cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
-		return nil, err
+
+	if spec.Init != "" {
+		if err := p.client.ContainerExecCmd(ctx, containerID, spec.Init); err != nil {
+			log.Error(err)
+			return nil, err
+		}
 	}
 
-	p.containerIDs = append(p.containerIDs, resp.ID)
-
-	//spec.Init string
-	//docker exec ...
-
-	id := instance.ID(resp.ID)
+	id := instance.ID(containerID)
 	return &id, nil
 
 }
@@ -103,11 +113,8 @@ func (p *plugin) Provision(spec instance.Spec) (*instance.ID, error) {
 func (p *plugin) Destroy(instance instance.ID) error {
 	id := string(instance)
 	ctx := context.Background()
-	d := 5 * time.Second
-	if err := p.cli.ContainerStop(ctx, id, &d); err != nil {
-		return err
-	}
-	if err := p.cli.ContainerRemove(ctx, id, types.ContainerRemoveOptions{}); err != nil {
+	if err := p.client.ContainerStopAndRemove(ctx, id); err != nil {
+		log.Error(err)
 		return err
 	}
 
@@ -115,6 +122,24 @@ func (p *plugin) Destroy(instance instance.ID) error {
 }
 
 func (p *plugin) DescribeInstances(tags map[string]string) ([]instance.Description, error) {
-	//Get p.containerIDs and then show docker container info
-	return []instance.Description{}, nil
+	ctx := context.Background()
+
+	containers, err := p.client.ContainerList(ctx, tags)
+	if err != nil {
+		log.Error(err)
+		return nil, err
+	}
+
+	var descList []instance.Description
+
+	for _, c := range containers {
+		logicalID := instance.LogicalID(c.ID) //todo(anarcher): LogicalID?
+		desc := instance.Description{
+			ID:        instance.ID(c.ID),
+			LogicalID: &logicalID,
+			Tags:      c.Labels,
+		}
+		descList = append(descList, desc)
+	}
+	return descList, nil
 }
