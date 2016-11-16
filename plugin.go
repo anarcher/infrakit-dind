@@ -7,7 +7,9 @@ import (
 	"time"
 
 	log "github.com/Sirupsen/logrus"
-	docker "github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/network"
 	docker_client "github.com/docker/docker/client"
 	"github.com/docker/infrakit/pkg/spi/instance"
 )
@@ -18,7 +20,7 @@ const (
 )
 
 // Spec is a docker container run options.
-type Spec struct {
+type ContainerSpec struct {
 	Name     string
 	Hostname string
 	Ports    []string
@@ -45,11 +47,11 @@ func NewDInDInstancePlugin() instance.Plugin {
 func (p *plugin) Validate(req json.RawMessage) error {
 	log.Debugln("validate", string(req))
 
-	if p.err {
+	if p.err != nil {
 		return p.err
 	}
 
-	spec := Spec{}
+	spec := ContainerSpec{}
 	if err := json.Unmarshal(req, &spec); err != nil {
 		return err
 	}
@@ -63,28 +65,28 @@ func (p *plugin) Provision(spec instance.Spec) (*instance.ID, error) {
 		return nil, fmt.Errorf("no-properties")
 	}
 
-	spec := Spec{
+	containerSpec := &ContainerSpec{
 		Image: DefaultImage,
 	}
-	if err := json.Unmarshal(*spec.Properties, &spec); err != nil {
+	if err := json.Unmarshal(*spec.Properties, &containerSpec); err != nil {
 		return nil, err
 	}
 
 	ctx := context.Background()
 
-	cfg := &docker.Config{
-		Hostname: spec.Hostname,
-		Image:    spec.Image,
+	cfg := &container.Config{
+		Hostname: containerSpec.Hostname,
+		Image:    containerSpec.Image,
 	}
-	hostCfg := &docker.HostConfig{
+	hostCfg := &container.HostConfig{
 		Privileged: true,
 	}
-	netCfg := &docker.NetworkingConfig{}
-	resp, err := p.cli.ContainerCreate(ctx, cfg, hostCfg, netCfg, spec.Name)
+	netCfg := &network.NetworkingConfig{}
+	resp, err := p.cli.ContainerCreate(ctx, cfg, hostCfg, netCfg, containerSpec.Name)
 	if err != nil {
 		return nil, err
 	}
-	if err := p.cli.ContainerStart(ctx, resp.ID, &docker.ContainerStartOptions{}); err != nil {
+	if err := p.cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
 		return nil, err
 	}
 
@@ -93,16 +95,19 @@ func (p *plugin) Provision(spec instance.Spec) (*instance.ID, error) {
 	//spec.Init string
 	//docker exec ...
 
-	return instance.ID(resp.ID), nil
+	id := instance.ID(resp.ID)
+	return &id, nil
 
 }
 
 func (p *plugin) Destroy(instance instance.ID) error {
-	ctx = context.Background()
-	if err := p.cli.ContainerStop(ctx, instance, 1*time.Seconds); err != nil {
+	id := string(instance)
+	ctx := context.Background()
+	d := 5 * time.Second
+	if err := p.cli.ContainerStop(ctx, id, &d); err != nil {
 		return err
 	}
-	if err := p.cli.ContainerRemove(ctx, instance, &docker.ContainerRemoveOptions{}); err != nil {
+	if err := p.cli.ContainerRemove(ctx, id, types.ContainerRemoveOptions{}); err != nil {
 		return err
 	}
 

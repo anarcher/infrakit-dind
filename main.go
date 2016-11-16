@@ -5,13 +5,13 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/docker/infrakit/pkg/cli"
-	instance_plugin "github.com/docker/infrakitr/pkg/rpc/instance"
+	instance_plugin "github.com/docker/infrakit/pkg/rpc/instance"
 	"github.com/spf13/cobra"
 )
 
 func main() {
 	var (
-		logLevel init
+		logLevel int
 		name     string
 	)
 
@@ -26,7 +26,7 @@ func main() {
 		},
 	}
 
-	cmd.AddCommand(cli.VersionCommand())
+	//cmd.AddCommand(cli.VersionCommand())
 	cmd.Flags().StringVar(&name, "name", "instance-dind", "Plugin name to advertise for discovery")
 	cmd.PersistentFlags().IntVar(&logLevel, "log", cli.DefaultLogLevel, "Logging level. 0 is least verbose. Max is 5")
 
