@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"strings"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
@@ -62,7 +63,7 @@ func (p *plugin) Validate(req json.RawMessage) error {
 
 // Provision creates a new instance based on the spec
 func (p *plugin) Provision(spec instance.Spec) (*instance.ID, error) {
-	log.Infoln("provision")
+	log.Debugln("provision")
 	if spec.Properties == nil {
 		return nil, fmt.Errorf("no-properties")
 	}
@@ -107,9 +108,13 @@ func (p *plugin) Provision(spec instance.Spec) (*instance.ID, error) {
 	}
 
 	if spec.Init != "" {
-		if err := p.client.ContainerExecCmd(ctx, containerID, spec.Init); err != nil {
-			log.Error(err)
-			return nil, err
+		cmds := strings.Split(spec.Init, "\n")
+		for _, cmd := range cmds {
+			log.Debugln("cmd:", cmd)
+			if err := p.client.ContainerExecCmd(ctx, containerID, cmd); err != nil {
+				log.Error(err)
+				return nil, err
+			}
 		}
 	}
 
@@ -119,7 +124,7 @@ func (p *plugin) Provision(spec instance.Spec) (*instance.ID, error) {
 }
 
 func (p *plugin) Destroy(instance instance.ID) error {
-	log.Infoln("destroy")
+	log.Debugln("destroy")
 	id := string(instance)
 	ctx := context.Background()
 	if err := p.client.ContainerStopAndRemove(ctx, id); err != nil {
@@ -131,7 +136,7 @@ func (p *plugin) Destroy(instance instance.ID) error {
 }
 
 func (p *plugin) DescribeInstances(tags map[string]string) ([]instance.Description, error) {
-	log.Infoln("describeInstances")
+	log.Debugln("describeInstances")
 
 	ctx := context.Background()
 

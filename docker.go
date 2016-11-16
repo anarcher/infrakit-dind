@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/docker/engine-api/client"
@@ -72,17 +73,29 @@ func (c *DockerClient) ContainerStopAndRemove(ctx context.Context, id string) er
 }
 
 func (c *DockerClient) ContainerExecCmd(ctx context.Context, id string, cmd string) error {
+
 	cfg := types.ExecConfig{
-		Cmd: []string{cmd},
+		Cmd:        strings.Split(cmd, " "),
+		Privileged: true,
 	}
-	resp, err := c.client.ContainerExecCreate(ctx, id, cfg)
+	exec, err := c.client.ContainerExecCreate(ctx, id, cfg)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create exec: %v", err)
 	}
 
 	execCfg := types.ExecStartCheck{}
-	if err := c.client.ContainerExecStart(ctx, resp.ID, execCfg); err != nil {
-		return err
+	if err := c.client.ContainerExecStart(ctx, exec.ID, execCfg); err != nil {
+		return fmt.Errorf("failed to start exec: %v", err)
+
+	}
+
+	inspect, err := c.client.ContainerExecInspect(ctx, exec.ID)
+	if err != nil {
+		return fmt.Errorf("failed to check prepare command exit code: %v", err)
+	}
+
+	if c := inspect.ExitCode; c != 0 {
+		return fmt.Errorf("prepare command exited with code %v", c)
 	}
 
 	return nil
