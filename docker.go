@@ -5,12 +5,19 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
-)
+	"github.com/docker/engine-api/client"
+	"github.com/docker/engine-api/types"
+	"github.com/docker/engine-api/types/container"
+	"github.com/docker/engine-api/types/filters"
+	"github.com/docker/engine-api/types/network"
+	/*
+		//client is newer than server (client API version: 1.25, server API version: 1.24)
+		"github.com/docker/docker/api/types"
+		"github.com/docker/docker/api/types/container"
+		"github.com/docker/docker/api/types/filters"
+		"github.com/docker/docker/api/types/network"
+		"github.com/docker/docker/client"
+	*/)
 
 type DockerClient struct {
 	client *client.Client
@@ -88,7 +95,7 @@ func (c *DockerClient) ContainerList(ctx context.Context, tags map[string]string
 	}
 
 	opts := types.ContainerListOptions{
-		Filters: args,
+		Filter: args,
 	}
 
 	ls, err := c.client.ContainerList(ctx, opts)

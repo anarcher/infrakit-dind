@@ -62,7 +62,7 @@ func (p *plugin) Validate(req json.RawMessage) error {
 
 // Provision creates a new instance based on the spec
 func (p *plugin) Provision(spec instance.Spec) (*instance.ID, error) {
-	log.Debugln("provision")
+	log.Infoln("provision")
 	if spec.Properties == nil {
 		return nil, fmt.Errorf("no-properties")
 	}
@@ -81,12 +81,20 @@ func (p *plugin) Provision(spec instance.Spec) (*instance.ID, error) {
 	labels := spec.Tags
 
 	idx := rand.Int31()
-	name := string(*spec.LogicalID)
-	hostname := string(*spec.LogicalID)
-	if name == "" {
+	var (
+		name     string
+		hostname string
+	)
+
+	if spec.LogicalID != nil {
+		name = string(*spec.LogicalID)
+	} else {
 		name = fmt.Sprintf("%s-%d", cSpec.Name, idx)
 	}
-	if hostname == "" {
+
+	if spec.LogicalID != nil {
+		hostname = string(*spec.LogicalID)
+	} else {
 		hostname = fmt.Sprintf("%s-%d", cSpec.Hostname, idx)
 	}
 
@@ -111,6 +119,7 @@ func (p *plugin) Provision(spec instance.Spec) (*instance.ID, error) {
 }
 
 func (p *plugin) Destroy(instance instance.ID) error {
+	log.Infoln("destroy")
 	id := string(instance)
 	ctx := context.Background()
 	if err := p.client.ContainerStopAndRemove(ctx, id); err != nil {
@@ -122,6 +131,8 @@ func (p *plugin) Destroy(instance instance.ID) error {
 }
 
 func (p *plugin) DescribeInstances(tags map[string]string) ([]instance.Description, error) {
+	log.Infoln("describeInstances")
+
 	ctx := context.Background()
 
 	containers, err := p.client.ContainerList(ctx, tags)
