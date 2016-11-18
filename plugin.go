@@ -88,14 +88,13 @@ func (p *plugin) Provision(spec instance.Spec) (*instance.ID, error) {
 	)
 
 	if spec.LogicalID != nil {
-		name = string(*spec.LogicalID)
+		logicalID := string(*spec.LogicalID)
+		name = logicalID
+		hostname = logicalID
+		labels["LogicalID"] = logicalID
+		log.Debugln("logicalID", logicalID)
 	} else {
 		name = fmt.Sprintf("%s-%d", cSpec.Name, idx)
-	}
-
-	if spec.LogicalID != nil {
-		hostname = string(*spec.LogicalID)
-	} else {
 		hostname = fmt.Sprintf("%s-%d", cSpec.Hostname, idx)
 	}
 
@@ -149,7 +148,14 @@ func (p *plugin) DescribeInstances(tags map[string]string) ([]instance.Descripti
 	var descList []instance.Description
 
 	for _, c := range containers {
-		logicalID := instance.LogicalID(c.ID) //todo(anarcher): LogicalID?
+		var logicalID instance.LogicalID
+		if id, ok := c.Labels["LogicalID"]; ok {
+			logicalID = instance.LogicalID(id)
+		} else {
+			logicalID = instance.LogicalID(c.ID)
+		}
+		log.Debugln("logicalID", logicalID)
+
 		desc := instance.Description{
 			ID:        instance.ID(c.ID),
 			LogicalID: &logicalID,
